@@ -40,7 +40,7 @@
 
 #include <errno.h>            // errno, perror()
 
-#define WVWMS_PORT 3000
+#define WVWMS_PORT 3001
 #define MAXBUF 255
 
 // Define some constants.
@@ -89,7 +89,7 @@ void process_packet(char *buffer)
 	struct udphdr *udphdr;
 	iphdr = (struct ip6_hdr *) (buffer + ETH_HDRLEN);
 	udphdr = (struct udphdr *) (buffer + ETH_HDRLEN + sizeof (struct ip6_hdr));
-	if(ntohs(udphdr->source) == WVWMS_PORT && ntohs(udphdr->dest) == WVWMS_PORT){
+	if(ntohs(udphdr->dest) == WVWMS_PORT){
 		if(verify_crc(buffer)) {
 			printf("CRC error \n");
 			return;
@@ -121,21 +121,36 @@ void process_data(char *buffer, struct ip6_hdr *iphdr, struct udphdr *udphdr)
 	unsigned short offset =
 			ETH_HDRLEN + sizeof (struct ip6_hdr) + sizeof(struct udphdr);
 	is_config_download(buffer+offset, (short) *(buffer+offset));
-	if(!is_measurement_data(buffer+offset, *(buffer+offset) ));
+	if(is_measurement_data(buffer+offset, *(buffer+offset) ) == 0) return;
 	display_data(buffer+offset, length);
 }
 
 int is_measurement_data(char *buffer, short length)
 {
 	unsigned int data;
-	/*
+	static unsigned int cntr = 0;
+	int i = 0;
+        cntr++;
+	if (cntr==20){
+		cntr = 0;
+		printf("!\n");
+	}
 	if(*(buffer+1) == 0x0B && length == 5) {
-		data = (*(buffer+4)<<16) | (*(buffer+3)<<8) | (*buffer+2);
+		data = (*(buffer+4)<<16) | (*(buffer+3)<<8) | (*(buffer+2));
 		printf("M: %16u\n", data);
 		return 0;
 	}
-	*/
+	else if(*(buffer+1) == 0x0B && length >5) {
+		i = 0;
+		while(length>i+2){
+			data = (*(buffer+4+i)<<16) | (*(buffer+3+i)<<8) | (*(buffer+2+i));
+			printf("M%u: %16u\n", i/4, data);
+			i+=4;
+		}
+		return 0;
+	}
 	else return -1;
+	return 0;
 }
 
 
@@ -161,6 +176,7 @@ int save_config(char *buffer, unsigned char length)
 	fwrite(buffer, length, sizeof(char), handleWrite);
 	fclose(handleWrite);
 	printf("\n");
+	return 0;
 }
 
 void display_data(char *buffer, short length)
@@ -209,7 +225,8 @@ checksum (uint16_t *addr, int len)
 
 // Build IPv6 UDP pseudo-header and call checksum function (Section 8.1 of RFC 2460).
 uint16_t
-udp6_checksum (struct ip6_hdr iphdr, struct udphdr udphdr, uint8_t *payload, int payloadlen)
+udp6_checksum (struct ip6_hdr iphdr, struct udphdr udphdr, uint8_t *payload, 
+		int payloadlen)
 {
   char buf[IP_MAXPACKET];
   char *ptr;
@@ -287,7 +304,8 @@ allocate_strmem (int len)
   void *tmp;
 
   if (len <= 0) {
-    fprintf (stderr, "ERROR: Cannot allocate memory because len = %i in allocate_strmem().\n", len);
+    fprintf (stderr, 
+	"ERROR: Cannot allocate memory because len = %i in allocate_strmem().\n", len);
     exit (EXIT_FAILURE);
   }
 
@@ -308,7 +326,8 @@ allocate_ustrmem (int len)
   void *tmp;
 
   if (len <= 0) {
-    fprintf (stderr, "ERROR: Cannot allocate memory because len = %i in allocate_ustrmem().\n", len);
+    fprintf (stderr, 
+	"ERROR: Cannot allocate memory because len = %i in allocate_ustrmem().\n", len);
     exit (EXIT_FAILURE);
   }
 

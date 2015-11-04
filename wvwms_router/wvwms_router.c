@@ -73,20 +73,31 @@ struct wvwms_configuration{
 };
 
 // Function prototypes
-uint16_t checksum (uint16_t *, int);
-uint16_t udp6_checksum (struct ip6_hdr, struct udphdr, uint8_t *, int);
-char *allocate_strmem (int);
-uint8_t *allocate_ustrmem (int);
 void process_packet(char *buffer);
-void process_incoming_data(char *buffer, struct ip6_hdr *iphdr, struct udphdr *udphdr);
-void process_outgoing_data(char *buffer, struct ip6_hdr *iphdr, struct udphdr *udphdr);
-void display_data(char *buffer, short length);
 int verify_crc(char *buffer);
-int save_config(char *buffer, unsigned char length);
-int is_config_download(char *buffer, short length);
+void process_outgoing_data(char *buffer, struct ip6_hdr *iphdr, struct udphdr *udphdr);
+void display_register(char *reg, size_t size);
+int is_command(char *buffer, size_t length);
+int is_config_upload(char *buffer, short length);
+void process_incoming_data(char *buffer, struct ip6_hdr *iphdr, struct udphdr *udphdr);
 int is_measurement_data(char *buffer, short length);
+int is_config_download(char *buffer, short length);
+int is_message(char *buffer, short length);
 void print_wvwms_config(struct wvwms_configuration *config);
 void print_adc_config(struct ad7190_configuration *config);
+int save_config(char *buffer, unsigned char length);
+void display_data(char *buffer, short length);
+void display_outgoing_data(char *buffer, short length);
+uint16_t
+checksum (uint16_t *addr, int len);
+uint16_t
+udp6_checksum (struct ip6_hdr iphdr, struct udphdr udphdr, uint8_t *payload, 
+		int payloadlen);
+char *
+allocate_strmem (int len);
+uint8_t *
+allocate_ustrmem (int len);
+
 
 int ss;
 

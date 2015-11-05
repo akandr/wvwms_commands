@@ -39,6 +39,7 @@
 #include <net/ethernet.h>
 #include <time.h>
 #include <errno.h>            // errno, perror()
+#include "mspcom.h"
 
 #define WVWMS_PORT 3001
 #define WVWMS_COMMAND_PORT 3000
@@ -51,8 +52,6 @@
 #define IP6_HDRLEN 40  // IPv6 header length
 #define UDP_HDRLEN  8  // UDP header length, excludes data
 
-enum MeasurementMode {NORMAL, FAST, SAMPLE_PACK, CUTOFF, CUTOFF_PACK, PEAK,
-	PEAK_SIMPLE, TRUCK, TRUCK_SIMPLE};
 
 struct ad7190_configuration{
 	unsigned int mode_register; //= DEFAULT_MODE_REGISTER;
@@ -141,7 +140,7 @@ void process_packet(char *buffer)
 			printf("Sending with CRC error \n");
 			return;
 		}
-		process_outging_data(buffer, iphdr, udphdr);
+		process_outgoing_data(buffer, iphdr, udphdr);
 	}
 }
 
@@ -183,6 +182,8 @@ void display_register(char *reg, size_t size)
 
 int is_command(char *buffer, size_t length)
 {
+	time_t t = time(NULL);
+	struct tm tm = *localtime(&t);
 		printf("%d-%d-%d %d:%d:%d Command to module: ", tm.tm_year + 1900, 
 			tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
 		switch(*(buffer+3))
@@ -255,7 +256,7 @@ int is_command(char *buffer, size_t length)
 					case SYSTEM_FULL_SCALE:
 						printf("system full scale");
 					break;
-					case default:
+					default:
 						printf("uknown");
 					break;
 				}
@@ -286,7 +287,7 @@ int is_command(char *buffer, size_t length)
 					case 128:
 						printf("7");
 					break;
-					case default:
+					default:
 						printf("uknown");
 					break;
 				}
@@ -324,7 +325,7 @@ int is_command(char *buffer, size_t length)
 					case G_39mV:
 						printf("+-39.06mV\n");
 					break;
-					case default:
+					default:
 						printf("prohibited value!\n");
 					break;
 				}
@@ -366,7 +367,7 @@ int is_command(char *buffer, size_t length)
 					case TRUCK_SIMPLE:
 						printf("truck simple\n");
 					break;	
-					case default:
+					default:
 						printf("unknown\n");
 					break;
 				}
@@ -543,7 +544,7 @@ int is_message(char *buffer, short length)
 			case ERROR_ADC_ID:
 				printf("wrong ADC ID\n");
 				break;
-			case default:
+			default:
 				printf("unrecognized\n");
 				return -1;
 				break;			

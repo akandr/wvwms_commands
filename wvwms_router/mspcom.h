@@ -67,7 +67,7 @@ enum MeasurementMode {NORMAL, FAST, SAMPLE_PACK, CUTOFF, CUTOFF_PACK,
 #define SYSTEM_FULL_SCALE 0x7
 
 #define G_5V 0
-#define G_623mV 3
+#define G_625mV 3
 #define G_312mV  4
 #define G_156mV 5
 #define G_78mV 6

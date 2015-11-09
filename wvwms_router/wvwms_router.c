@@ -96,10 +96,17 @@ char *
 allocate_strmem (int len);
 uint8_t *
 allocate_ustrmem (int len);
-
+void print_time(void);
 
 int ss;
 
+void print_time(void)
+{
+	time_t t = time(NULL);
+	struct tm tm = *localtime(&t);
+	printf("%d-%02d-%02d %02d:%02d:%02d ", tm.tm_year + 1900, 
+			tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+}
 int main (int argc, char **argv)
 {
   int sd;
@@ -182,13 +189,11 @@ void display_register(char *reg, size_t size)
 
 int is_command(char *buffer, size_t length)
 {
-	time_t t = time(NULL);
-	struct tm tm = *localtime(&t);
-		printf("%d-%d-%d %d:%d:%d Command to module: ", tm.tm_year + 1900, 
-			tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+	int cutoff;
 		switch(*(buffer+3))
 		{
 			case CMD_MEASUREMENT:
+				print_time();
 				printf("measurement ");
 				if(*(buffer+4))
 					printf("start\n");
@@ -196,6 +201,7 @@ int is_command(char *buffer, size_t length)
 					printf("stop\n");
 			break;
 			case CMD_VAA_POWER:
+				print_time();
 				printf("vaa power ");
 				if(*(buffer+4))
 					printf("on\n");
@@ -203,6 +209,7 @@ int is_command(char *buffer, size_t length)
 					printf("off\n");
 			break;
 			case CMD_VDD_POWER:
+				print_time();
 				printf("vdd power ");
 				if(*(buffer+4))
 					printf("on\n");
@@ -210,6 +217,7 @@ int is_command(char *buffer, size_t length)
 					printf("off\n");
 			break;
 			case CMD_ADC_POWER:
+				print_time();
 				printf("adc power (don't trust it) ");
 				if(*(buffer+4))
 					printf("on\n");
@@ -217,6 +225,7 @@ int is_command(char *buffer, size_t length)
 					printf("off\n");
 			break;
 			case CMD_SET_ACX:
+				print_time();
 				printf("adc acx ");
 				if(*(buffer+4))
 					printf("on\n");
@@ -224,6 +233,7 @@ int is_command(char *buffer, size_t length)
 					printf("off\n");
 			break;
 			case CMD_SET_CHOP:
+				print_time();
 				printf("adc chop ");
 				if(*(buffer+4))
 					printf("on\n");
@@ -231,16 +241,20 @@ int is_command(char *buffer, size_t length)
 					printf("off\n");
 			break;
 			case CMD_READ_REGISTER:
+				print_time();
 				printf("read register with length %u, addr 0x%02x\n", *(buffer+5), *(buffer+4));
 			break;
 			case CMD_WRITE_REGISTER:
+				print_time();
 				printf("write register with length %u, addr 0x%02x ", *(buffer+5), *(buffer+4));
 				display_register(buffer+6, *(buffer+5));
 			break;
 			case CMD_CONSOLE_PRINT:
+				print_time();
 				printf("console print\n");
 			break;			
 			case CMD_CALIBRATE:
+				print_time();
 				printf("calibrate mode ");
 				switch (*(buffer+4))
 				{
@@ -263,44 +277,47 @@ int is_command(char *buffer, size_t length)
 				printf(" channel ");
 				switch (*(buffer+5))
 				{
-					case 1:
+					case 0:
 						printf("0");
 					break;
-					case 2:
+					case 1:
 						printf("1");
 					break;
-					case 4:
+					case 2:
 						printf("2");
 					break;
-					case 8:
+					case 3:
 						printf("3");
 					break;
-					case 16:
+					case 4:
 						printf("4");
 					break;
-					case 32:
+					case 5:
 						printf("5");
 					break;
-					case 64:
+					case 6:
 						printf("6");
 					break;
-					case 128:
+					case 7:
 						printf("7");
 					break;
 					default:
-						printf("uknown");
+						printf("uknown %u", *(buffer+5));
 					break;
 				}
 				printf("\n");
 			break;
 			case CMD_SELECT_CHANNEL:
+				print_time();
 				printf("select channel %u", (unsigned short) *(buffer+4));
 			break;
 			case CMD_SET_CUTOFF:
-				int cutoff = *(int*)(buffer+4);
+				print_time();
+				cutoff = *(int*)(buffer+4);
 				printf("set cutoff to %u", cutoff);
 			break;
 			case CMD_RANGE_SETUP:
+				print_time();
 				printf("set polarity to ");
 				if(*(buffer+4)) printf("unipolar ");
 				else printf("bipolar ");
@@ -313,7 +330,7 @@ int is_command(char *buffer, size_t length)
 					case G_625mV:
 						printf("+-625mV\n");
 					break;
-					case G_321mV:
+					case G_312mV:
 						printf("+-312.5mV\n");
 					break;
 					case G_156mV:
@@ -331,12 +348,20 @@ int is_command(char *buffer, size_t length)
 				}
 			break;
 			case CMD_ADC_POWER_MODE:
-				printf("adc power mode ")
-				if(*(buffer+4)==IDLE_MODE) printf("idle\n");
-				else if(*(buffer+4)==POWER_DOWN_MODE) printf("power down\n");
-				else printf("unknown\n");
+				print_time();
+				printf("adc power mode ");
+				if(*(buffer+4)==IDLE_MODE){
+					printf("idle\n");
+				}
+				else if(*(buffer+4)==POWER_DOWN_MODE){
+					printf("power down\n");
+				}
+				else{
+					printf("unknown\n");
+				}
 			break;				
 			case CMD_MODE:
+				print_time();
 				printf("set mode ");
 				switch (*(buffer+4))
 				{
@@ -373,43 +398,66 @@ int is_command(char *buffer, size_t length)
 				}
 			break;
 			case CMD_LOAD_CONFIG_FLASH:
+				print_time();
 				printf("load config from flash\n");
 			break;
 			case CMD_SAVE_CONFIG_FLASH:
-				printf("load config from flash\n");
+				print_time();
+				printf("save config to flash\n");
 			break;
 			case CMD_ADC_TO_ARM:
+				print_time();
 				printf("read adc config to arm\n");
 			break;
 			case CMD_ARM_TO_ADC:
+				print_time();
 				printf("write adc config from arm\n");
 			break;
 			case CMD_GET_STATUS_REG:
+				print_time();
 				printf("get adc status register\n");
 			break;			
 			case CMD_SOFT_RESET_ADC:
+				print_time();
 				printf("soft reset of adc\n");
 			break;
 			case CMD_ADC_SINGLE:
+				print_time();
 				printf("single conversion\n");
 			break;
 			case CMD_CHECK_ADC:
+				print_time();
 				printf("check adc\n");
 			break;
 			case CMD_GET_ADC_TEMP:
+				print_time();
 				printf("get adc temperature\n");
 			break;
 			case CMD_SET_DEFAULT:
+				print_time();
 				printf("set default settings in arm\n");
-			break;			
+			break;
+			case CMD_READ_CONFIG:
+				print_time();
+				printf("download config\n");
+			break;
+			case CMD_WRITE_CONFIG:
+				print_time();
+				printf("upload config:\n");
+				print_wvwms_config((struct wvwms_configuration *)((char *)buffer+4));
+			default:
+				return -1;
+			break;
 		}
-	else return -1;
+	return 0;
 }
 
 int is_config_upload(char *buffer, short length)
 {
+	time_t t = time(NULL);
+	struct tm tm = *localtime(&t);
 	if(*(buffer+3) == CMD_WRITE_CONFIG) {
-		printf("%d-%d-%d %d:%d:%d Uploaded config: \n", tm.tm_year + 1900, 
+		printf("%d-%02d-%02d %02d:%02d:%02d Uploaded config: \n", tm.tm_year + 1900, 
 			tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
 		print_wvwms_config((struct wvwms_configuration *)((char *)buffer+4));
 		return 0;
@@ -424,74 +472,62 @@ void process_incoming_data(char *buffer, struct ip6_hdr *iphdr, struct udphdr *u
 			ETH_HDRLEN + sizeof (struct ip6_hdr) + sizeof(struct udphdr);
 	if(is_measurement_data(buffer+offset, (short) *(buffer+offset) ) == 0) return;
 	if(is_config_download(buffer+offset, (short) *(buffer+offset)) == 0) return;
-	if(is_message(buffer+offset, (short) *(buffer+offset)) == 0)
+	if(is_message(buffer+offset, (short) *(buffer+offset)) == 0)  return;
 	display_data(buffer+offset, length);
 }
 
 int is_measurement_data(char *buffer, short length)
 {
-	time_t t = time(NULL);
-	struct tm tm = *localtime(&t);
-
-	printf("%d-%d-%d %d:%d:%d ", tm.tm_year + 1900, 
-			tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
 	unsigned int data;
 	int i = 0;
 
 	if(*(buffer+1) == CMD_MEASUREMENT && length == 5) {
+		print_time();
 		data = (*(buffer+4)<<16) | (*(buffer+3)<<8) | (*(buffer+2));
-		printf("%d-%d-%d %d:%d:%d ", tm.tm_year + 1900, 
-			tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
 		printf("CMD_MEASUREMENT: %16u\n", data);
 		return 0;
 	}
 	else if(*(buffer+1) == CMD_MEAS_FAST && length == 5) {
+		print_time();
 		data = (*(buffer+4)<<16) | (*(buffer+3)<<8) | (*(buffer+2));
-		printf("%d-%d-%d %d:%d:%d ", tm.tm_year + 1900, 
-			tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
 		printf("CMD_MEAS_FAST: %16u\n", data);
 		return 0;
 	}
 	else if(*(buffer+1) == CMD_MEAS_SAMPLE_PACK  && length >5) {
 		i = 0;
 		while(length>i+2){
+			print_time();
 			data = (*(buffer+4+i)<<16) | (*(buffer+3+i)<<8) | (*(buffer+2+i));
-			printf("%d-%d-%d %d:%d:%d ", tm.tm_year + 1900, 
-				tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
 			printf("CMD_MEAS_SAMPLE_PACK(%u): %16u\n", i/4, data);
 			i+=4;
 		}
 		return 0;
 	}
 	else if(*(buffer+1) == CMD_MEAS_CUTOFF && length == 5) {
+		print_time();
 		data = (*(buffer+4)<<16) | (*(buffer+3)<<8) | (*(buffer+2));
-		printf("%d-%d-%d %d:%d:%d ", tm.tm_year + 1900, 
-			tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
 		printf("CMD_MEAS_CUTOFF: %16u\n", data);
 		return 0;
 	}
 	else if(*(buffer+1) == CMD_MEAS_CUTOFF_PACK  && length >5) {
 		i = 0;
 		while(length>i+2){
+			print_time();
 			data = (*(buffer+4+i)<<16) | (*(buffer+3+i)<<8) | (*(buffer+2+i));
-			printf("%d-%d-%d %d:%d:%d ", tm.tm_year + 1900, 
-				tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
 			printf("CMD_MEAS_CUTOFF_PACK(%u): %16u\n", i/4, data);
 			i+=4;
 		}
 		return 0;
 	}
 	else if(*(buffer+1) == CMD_MEAS_PEAK && length == 5) {
+		print_time();
 		data = (*(buffer+4)<<16) | (*(buffer+3)<<8) | (*(buffer+2));
-		printf("%d-%d-%d %d:%d:%d ", tm.tm_year + 1900, 
-			tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
 		printf("CMD_MEAS_PEAK: %16u\n", data);
 		return 0;
 	}
 	else if(*(buffer+1) == CMD_MEAS_PEAK_SIMPLE && length == 5) {
+		print_time();
 		data = (*(buffer+4)<<16) | (*(buffer+3)<<8) | (*(buffer+2));
-		printf("%d-%d-%d %d:%d:%d ", tm.tm_year + 1900, 
-			tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
 		printf("CMD_MEAS_PEAK_SIMPLE: %16u\n", data);
 		return 0;
 	}
@@ -502,8 +538,10 @@ int is_measurement_data(char *buffer, short length)
 
 int is_config_download(char *buffer, short length)
 {
+	time_t t = time(NULL);
+	struct tm tm = *localtime(&t);
 	if(*(buffer+1) == CMD_READ_CONFIG) {
-		printf("%d-%d-%d %d:%d:%d Downloaded config: \n", tm.tm_year + 1900, 
+		printf("%d-%02d-%02d %02d:%02d:%02d Downloaded config: \n", tm.tm_year + 1900, 
 			tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
 		save_config(buffer+2, *buffer);
 		print_wvwms_config((struct wvwms_configuration *)((char *)buffer+2));
@@ -514,9 +552,11 @@ int is_config_download(char *buffer, short length)
 
 int is_message(char *buffer, short length)
 {
+	time_t t = time(NULL);
+	struct tm tm = *localtime(&t);
 	if(*(buffer+1) == CMD_REPLY)
 	{
-		printf("%d-%d-%d %d:%d:%d Message from module: ", tm.tm_year + 1900, 
+		printf("%d-%02d-%02d %02d:%02d:%02d Message from module: ", tm.tm_year + 1900, 
 			tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
 		switch(*(buffer+2))
 		{
@@ -552,7 +592,7 @@ int is_message(char *buffer, short length)
 	}
 	else if(*(buffer+1) == CMD_CHECK_ADC)
 	{
-		printf("%d-%d-%d %d:%d:%d ADC check ID ", tm.tm_year + 1900, 
+		printf("%d-%02d-%02d %02d:%02d:%02d ADC check ID ", tm.tm_year + 1900, 
 			tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
 		if(*(buffer+2))
 		{
@@ -563,7 +603,15 @@ int is_message(char *buffer, short length)
 			printf("failed\n");
 		}
 	}
+	else if(*(buffer+1) == CMD_READ_REGISTER)
+	{
+		printf("%d-%02d-%02d %02d:%02d:%02d Read register ", tm.tm_year + 1900, 
+			tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+		printf("addr %02x ",*(buffer+2));
+		display_register((buffer+3), *(buffer)-2);
+	}
 	else return -1;
+	return 0;
 }
 
 void print_wvwms_config(struct wvwms_configuration *config)

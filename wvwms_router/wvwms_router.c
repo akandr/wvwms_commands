@@ -18,118 +18,76 @@
 // Need to have destination MAC address.
 // Includes some UDP data.
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>           // close()
-#include <string.h>           // strcpy, memset(), and memcpy()
-
-#include <netdb.h>            // struct addrinfo
-#include <sys/types.h>        // needed for socket(), uint8_t, uint16_t
-#include <sys/socket.h>       // needed for socket()
-#include <netinet/in.h>       // IPPROTO_UDP, INET6_ADDRSTRLEN
-#include <netinet/ip.h>       // IP_MAXPACKET (which is 65535)
-#include <netinet/ip6.h>      // struct ip6_hdr
-#include <netinet/udp.h>      // struct udphdr
-#include <arpa/inet.h>        // inet_pton() and inet_ntop()
-#include <sys/ioctl.h>        // macro ioctl is defined
-#include <bits/ioctls.h>      // defines values for argument "request" of ioctl.
-#include <net/if.h>           // struct ifreq
-#include <linux/if_ether.h>   // ETH_P_IP = 0x0800, ETH_P_IPV6 = 0x86DD
-#include <linux/if_packet.h>  // struct sockaddr_ll (see man 7 packet)
-#include <net/ethernet.h>
-#include <time.h>
-#include <errno.h>            // errno, perror()
 #include "mspcom.h"
+#include "wvwms_display.h"
+#include "wvwms_types.h"
+#include "udp_network.h"
+#include "ini.h"
 
-#define WVWMS_PORT 3001
-#define WVWMS_COMMAND_PORT 3000
 
 #define MAXBUF 255
 #define PACKET_CNTR 1
 
-// Define some constants.
-#define ETH_HDRLEN 14  // Ethernet header length
-#define IP6_HDRLEN 40  // IPv6 header length
-#define UDP_HDRLEN  8  // UDP header length, excludes data
-
-
-struct ad7190_configuration{
-	unsigned int mode_register; //= DEFAULT_MODE_REGISTER;
-	unsigned int configuration_register; //= DEFAULT_CONFIGURATION_REGISTER;
-	unsigned int offset_register; //= DEFAULT_OFFSET_REGISTER;
-	unsigned int full_scale_register; //= DEFAULT_FULL_SCALE_REGISTER;
-	unsigned int gpocon_register; //= DEFAULT_GPCON_REGISTER;
-};
-
-struct wvwms_configuration{
-	unsigned int flash_key;
-	struct ad7190_configuration ad7195_config;
-	uint32_t sampleCntAvg;
-	enum MeasurementMode meas_mode;
-	uint32_t samplePackSize;
-	uint32_t sampleCutOff;
-	uint32_t peakMargin;
-};
-
 // Function prototypes
-void process_packet(char *buffer);
-int verify_crc(char *buffer);
+void process_packet(char *buffer, fDispPtr* fArr);
 void process_outgoing_data(char *buffer, struct ip6_hdr *iphdr, struct udphdr *udphdr);
-void display_register(char *reg, size_t size);
-int is_command(char *buffer, size_t length);
 int is_config_upload(char *buffer, short length);
-void process_incoming_data(char *buffer, struct ip6_hdr *iphdr, struct udphdr *udphdr);
-int is_measurement_data(char *buffer, short length);
+void process_incoming_data(char *buffer, struct ip6_hdr *iphdr, struct udphdr *udphdr, fDispPtr* fArr);
 int is_config_download(char *buffer, short length);
-int is_message(char *buffer, short length);
-void print_wvwms_config(struct wvwms_configuration *config);
-void print_adc_config(struct ad7190_configuration *config);
 int save_config(char *buffer, unsigned char length);
-void display_data(char *buffer, short length);
-void display_outgoing_data(char *buffer, short length);
-uint16_t
-checksum (uint16_t *addr, int len);
-uint16_t
-udp6_checksum (struct ip6_hdr iphdr, struct udphdr udphdr, uint8_t *payload, 
-		int payloadlen);
-char *
-allocate_strmem (int len);
-uint8_t *
-allocate_ustrmem (int len);
-void print_time(void);
-
+int read_config_file(wvwms_router_config_t * router_cfg);
+static int config_handler(void* user, const char* section, const char* name,
+                   const char* value);
+int calculate(uint32_t sample, float * voltage, float *weight,
+		wvwms_router_config_t* pconfig);
 int ss;
 
-void print_time(void)
-{
-	time_t t = time(NULL);
-	struct tm tm = *localtime(&t);
-	printf("%d-%02d-%02d %02d:%02d:%02d ", tm.tm_year + 1900, 
-			tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
-}
 int main (int argc, char **argv)
 {
   int sd;
   char buffer[MAXBUF];
+  wvwms_router_config_t router_cfg;
+
+
   // Submit request for a raw socket descriptor.
-  if ((sd = socket (PF_PACKET, SOCK_RAW, htons (ETH_P_ALL))) < 0) {
-    perror ("reciving socket() failed ");
-    exit (EXIT_FAILURE);
-  }
   printf("Wireless Vehicle Weight Measurement System v2\n");
   printf("WVWMS Packet Router v2\n");
   printf("Compiled: %s  %s\n", __DATE__, __TIME__);
-  while(1){
-	  if (recvfrom(sd, buffer, MAXBUF, 0, NULL, NULL) > 0){
-		process_packet(buffer);
+
+  if ((sd = socket (PF_PACKET, SOCK_RAW, htons (ETH_P_ALL))) < 0)
+  {
+    perror("Creating receiver socket() failed");
+    return FAIL;
+  }
+  if (read_config_file(&router_cfg))
+  {
+	perror("No configuration, exiting\n");
+	return FAIL;
+  }
+
+  if(EXIT_SUCCESS != init_sender())
+  {
+	perror("Failed to create sender socket, exiting\n");
+	return FAIL;
+  }
+
+  fDispPtr fArr[255]={NULL};
+  register_data_display_functions(fArr);
+  fArr[250](NULL, NULL);
+
+  while(1)
+  {
+	  if (recvfrom(sd, buffer, MAXBUF, 0, NULL, NULL) > 0)
+	  {
+		process_packet(buffer, fArr);
   	  }
   }
-  // Close socket descriptor.
+
   close (sd);
   return (EXIT_SUCCESS);
 }
 
-void process_packet(char *buffer)
+void process_packet(char *buffer, fDispPtr* fArr)
 {
 	struct ip6_hdr *iphdr;
 	struct udphdr *udphdr;
@@ -137,10 +95,10 @@ void process_packet(char *buffer)
 	udphdr = (struct udphdr *) (buffer + ETH_HDRLEN + sizeof (struct ip6_hdr));
 	if(ntohs(udphdr->dest) == WVWMS_PORT){
 		if(verify_crc(buffer)) {
-			printf("CRC error \n");
+			printf("Receiving with CRC error \n");
 			return;
 		}
-		process_incoming_data(buffer, iphdr, udphdr);
+		process_incoming_data(buffer, iphdr, udphdr, fArr);
 	}
 	if(ntohs(udphdr->dest) == WVWMS_COMMAND_PORT){
 		if(verify_crc(buffer)) {
@@ -151,305 +109,14 @@ void process_packet(char *buffer)
 	}
 }
 
-int verify_crc(char *buffer)
-{
-	struct ip6_hdr *iphdr = (struct ip6_hdr *) (buffer + ETH_HDRLEN);
-	struct udphdr *udphdr =
-			(struct udphdr *) (buffer + ETH_HDRLEN + sizeof (struct ip6_hdr));
-	unsigned short length = ntohs(udphdr->len) - sizeof(struct udphdr);
-	unsigned short offset =
-			ETH_HDRLEN + sizeof (struct ip6_hdr) + sizeof(struct udphdr);
-
-	if (ntohs(udphdr->check) != 
-			ntohs(udp6_checksum(*iphdr, *udphdr, 
-					(uint8_t *)(buffer+offset), length))){
-			return -1;
-	}
-	return 0;
-}
-
 void process_outgoing_data(char *buffer, struct ip6_hdr *iphdr, struct udphdr *udphdr)
 {
 	unsigned short length = ntohs(udphdr->len) - sizeof(struct udphdr);
 	unsigned short offset =
 			ETH_HDRLEN + sizeof (struct ip6_hdr) + sizeof(struct udphdr);
-	if(is_command(buffer+offset, *(buffer+offset) ) == 0) return;
-	if(is_config_upload(buffer+offset, (short) *(buffer+offset)) == 0) return;
+	if(!display_outgoing_command(buffer+offset, *(buffer+offset))) return;
+	if(!is_config_upload(buffer+offset, (short) *(buffer+offset))) return;
 	display_outgoing_data(buffer+offset, length);
-}
-
-void display_register(char *reg, size_t size)
-{
-	int i;
-	printf("0x");
-	for(i = 0; i<size; i++)
-		printf("%02x", *(reg+i));
-	printf("\n");
-}
-
-int is_command(char *buffer, size_t length)
-{
-	int cutoff;
-		switch(*(buffer+3))
-		{
-			case CMD_MEASUREMENT:
-				print_time();
-				printf("measurement ");
-				if(*(buffer+4))
-					printf("start\n");
-				else
-					printf("stop\n");
-			break;
-			case CMD_VAA_POWER:
-				print_time();
-				printf("vaa power ");
-				if(*(buffer+4))
-					printf("on\n");
-				else
-					printf("off\n");
-			break;
-			case CMD_VDD_POWER:
-				print_time();
-				printf("vdd power ");
-				if(*(buffer+4))
-					printf("on\n");
-				else
-					printf("off\n");
-			break;
-			case CMD_ADC_POWER:
-				print_time();
-				printf("adc power (don't trust it) ");
-				if(*(buffer+4))
-					printf("on\n");
-				else
-					printf("off\n");
-			break;
-			case CMD_SET_ACX:
-				print_time();
-				printf("adc acx ");
-				if(*(buffer+4))
-					printf("on\n");
-				else
-					printf("off\n");
-			break;
-			case CMD_SET_CHOP:
-				print_time();
-				printf("adc chop ");
-				if(*(buffer+4))
-					printf("on\n");
-				else
-					printf("off\n");
-			break;
-			case CMD_READ_REGISTER:
-				print_time();
-				printf("read register with length %u, addr 0x%02x\n", *(buffer+5), *(buffer+4));
-			break;
-			case CMD_WRITE_REGISTER:
-				print_time();
-				printf("write register with length %u, addr 0x%02x ", *(buffer+5), *(buffer+4));
-				display_register(buffer+6, *(buffer+5));
-			break;
-			case CMD_CONSOLE_PRINT:
-				print_time();
-				printf("console print\n");
-			break;			
-			case CMD_CALIBRATE:
-				print_time();
-				printf("calibrate mode ");
-				switch (*(buffer+4))
-				{
-					case INTERNAL_ZERO_SCALE:
-						printf("internal zero scale");
-					break;
-					case INTERNAL_FULL_SCALE:
-						printf("internal full scale");
-					break;
-					case SYSTEM_ZERO_SCALE:
-						printf("system zero scale");
-					break;
-					case SYSTEM_FULL_SCALE:
-						printf("system full scale");
-					break;
-					default:
-						printf("uknown");
-					break;
-				}
-				printf(" channel ");
-				switch (*(buffer+5))
-				{
-					case 0:
-						printf("0");
-					break;
-					case 1:
-						printf("1");
-					break;
-					case 2:
-						printf("2");
-					break;
-					case 3:
-						printf("3");
-					break;
-					case 4:
-						printf("4");
-					break;
-					case 5:
-						printf("5");
-					break;
-					case 6:
-						printf("6");
-					break;
-					case 7:
-						printf("7");
-					break;
-					default:
-						printf("uknown %u", *(buffer+5));
-					break;
-				}
-				printf("\n");
-			break;
-			case CMD_SELECT_CHANNEL:
-				print_time();
-				printf("select channel %u", (unsigned short) *(buffer+4));
-			break;
-			case CMD_SET_CUTOFF:
-				print_time();
-				cutoff = *(int*)(buffer+4);
-				printf("set cutoff to %u", cutoff);
-			break;
-			case CMD_RANGE_SETUP:
-				print_time();
-				printf("set polarity to ");
-				if(*(buffer+4)) printf("unipolar ");
-				else printf("bipolar ");
-				printf(" and range to ");
-				switch (*(buffer+5))
-				{
-					case G_5V:
-						printf("+-5V\n");
-					break;
-					case G_625mV:
-						printf("+-625mV\n");
-					break;
-					case G_312mV:
-						printf("+-312.5mV\n");
-					break;
-					case G_156mV:
-						printf("+-156.2mV\n");
-					break;
-					case G_78mV:
-						printf("+-78.125mV\n");
-					break;
-					case G_39mV:
-						printf("+-39.06mV\n");
-					break;
-					default:
-						printf("prohibited value!\n");
-					break;
-				}
-			break;
-			case CMD_ADC_POWER_MODE:
-				print_time();
-				printf("adc power mode ");
-				if(*(buffer+4)==IDLE_MODE){
-					printf("idle\n");
-				}
-				else if(*(buffer+4)==POWER_DOWN_MODE){
-					printf("power down\n");
-				}
-				else{
-					printf("unknown\n");
-				}
-			break;				
-			case CMD_MODE:
-				print_time();
-				printf("set mode ");
-				switch (*(buffer+4))
-				{
-					case NORMAL:
-						printf("normal\n");
-					break;
-					case FAST:
-						printf("fast\n");
-					break;
-					case SAMPLE_PACK:
-						printf("sample pack\n");
-					break;
-					case CUTOFF:
-						printf("cutoff\n");
-					break;
-					case CUTOFF_PACK:
-						printf("cutoff pack\n");
-					break;
-					case PEAK:
-						printf("peak\n");
-					break;
-					case PEAK_SIMPLE:
-						printf("peak simple\n");
-					break;
-					case TRUCK:
-						printf("truck\n");
-					break;
-					case TRUCK_SIMPLE:
-						printf("truck simple\n");
-					break;	
-					default:
-						printf("unknown\n");
-					break;
-				}
-			break;
-			case CMD_LOAD_CONFIG_FLASH:
-				print_time();
-				printf("load config from flash\n");
-			break;
-			case CMD_SAVE_CONFIG_FLASH:
-				print_time();
-				printf("save config to flash\n");
-			break;
-			case CMD_ADC_TO_ARM:
-				print_time();
-				printf("read adc config to arm\n");
-			break;
-			case CMD_ARM_TO_ADC:
-				print_time();
-				printf("write adc config from arm\n");
-			break;
-			case CMD_GET_STATUS_REG:
-				print_time();
-				printf("get adc status register\n");
-			break;			
-			case CMD_SOFT_RESET_ADC:
-				print_time();
-				printf("soft reset of adc\n");
-			break;
-			case CMD_ADC_SINGLE:
-				print_time();
-				printf("single conversion\n");
-			break;
-			case CMD_CHECK_ADC:
-				print_time();
-				printf("check adc\n");
-			break;
-			case CMD_GET_ADC_TEMP:
-				print_time();
-				printf("get adc temperature\n");
-			break;
-			case CMD_SET_DEFAULT:
-				print_time();
-				printf("set default settings in arm\n");
-			break;
-			case CMD_READ_CONFIG:
-				print_time();
-				printf("download config\n");
-			break;
-			case CMD_WRITE_CONFIG:
-				print_time();
-				printf("upload config:\n");
-				print_wvwms_config((struct wvwms_configuration *)((char *)buffer+4));
-			default:
-				return -1;
-			break;
-		}
-	return 0;
 }
 
 int is_config_upload(char *buffer, short length)
@@ -459,82 +126,22 @@ int is_config_upload(char *buffer, short length)
 	if(*(buffer+3) == CMD_WRITE_CONFIG) {
 		printf("%d-%02d-%02d %02d:%02d:%02d Uploaded config: \n", tm.tm_year + 1900, 
 			tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
-		print_wvwms_config((struct wvwms_configuration *)((char *)buffer+4));
-		return 0;
+		display_wvwms_config((struct wvwms_configuration *)((char *)buffer+4));
+		return OK;
 	}
-	else return -1;
+	else return FAIL;
 }
 
-void process_incoming_data(char *buffer, struct ip6_hdr *iphdr, struct udphdr *udphdr)
+void process_incoming_data(char *buffer, struct ip6_hdr *iphdr, struct udphdr *udphdr, fDispPtr* fArr)
 {
 	unsigned short length = ntohs(udphdr->len) - sizeof(struct udphdr);
 	unsigned short offset =
 			ETH_HDRLEN + sizeof (struct ip6_hdr) + sizeof(struct udphdr);
-	if(is_measurement_data(buffer+offset, (short) *(buffer+offset) ) == 0) return;
-	if(is_config_download(buffer+offset, (short) *(buffer+offset)) == 0) return;
-	if(is_message(buffer+offset, (short) *(buffer+offset)) == 0)  return;
-	display_data(buffer+offset, length);
+	if(!process_mesaurement_data(buffer+offset, (short) *(buffer+offset), fArr)) return;
+	if(!is_config_download(buffer+offset, (short) *(buffer+offset))) return;
+	if(!display_incoming_messages(buffer+offset, (short) *(buffer+offset)))  return;
+	display_raw_data(buffer+offset, length);
 }
-
-int is_measurement_data(char *buffer, short length)
-{
-	unsigned int data;
-	int i = 0;
-
-	if(*(buffer+1) == CMD_MEASUREMENT && length == 5) {
-		print_time();
-		data = (*(buffer+4)<<16) | (*(buffer+3)<<8) | (*(buffer+2));
-		printf("CMD_MEASUREMENT: %16u\n", data);
-		return 0;
-	}
-	else if(*(buffer+1) == CMD_MEAS_FAST && length == 5) {
-		print_time();
-		data = (*(buffer+4)<<16) | (*(buffer+3)<<8) | (*(buffer+2));
-		printf("CMD_MEAS_FAST: %16u\n", data);
-		return 0;
-	}
-	else if(*(buffer+1) == CMD_MEAS_SAMPLE_PACK  && length >5) {
-		i = 0;
-		while(length>i+2){
-			print_time();
-			data = (*(buffer+4+i)<<16) | (*(buffer+3+i)<<8) | (*(buffer+2+i));
-			printf("CMD_MEAS_SAMPLE_PACK(%u): %16u\n", i/4, data);
-			i+=4;
-		}
-		return 0;
-	}
-	else if(*(buffer+1) == CMD_MEAS_CUTOFF && length == 5) {
-		print_time();
-		data = (*(buffer+4)<<16) | (*(buffer+3)<<8) | (*(buffer+2));
-		printf("CMD_MEAS_CUTOFF: %16u\n", data);
-		return 0;
-	}
-	else if(*(buffer+1) == CMD_MEAS_CUTOFF_PACK  && length >5) {
-		i = 0;
-		while(length>i+2){
-			print_time();
-			data = (*(buffer+4+i)<<16) | (*(buffer+3+i)<<8) | (*(buffer+2+i));
-			printf("CMD_MEAS_CUTOFF_PACK(%u): %16u\n", i/4, data);
-			i+=4;
-		}
-		return 0;
-	}
-	else if(*(buffer+1) == CMD_MEAS_PEAK && length == 5) {
-		print_time();
-		data = (*(buffer+4)<<16) | (*(buffer+3)<<8) | (*(buffer+2));
-		printf("CMD_MEAS_PEAK: %16u\n", data);
-		return 0;
-	}
-	else if(*(buffer+1) == CMD_MEAS_PEAK_SIMPLE && length == 5) {
-		print_time();
-		data = (*(buffer+4)<<16) | (*(buffer+3)<<8) | (*(buffer+2));
-		printf("CMD_MEAS_PEAK_SIMPLE: %16u\n", data);
-		return 0;
-	}
-	else return -1;
-}
-
-
 
 int is_config_download(char *buffer, short length)
 {
@@ -544,278 +151,111 @@ int is_config_download(char *buffer, short length)
 		printf("%d-%02d-%02d %02d:%02d:%02d Downloaded config: \n", tm.tm_year + 1900, 
 			tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
 		save_config(buffer+2, *buffer);
-		print_wvwms_config((struct wvwms_configuration *)((char *)buffer+2));
-		return 0;
+		display_wvwms_config((struct wvwms_configuration *)((char *)buffer+2));
+		return OK;
 	}
-	else return -1;
+	else return FAIL;
 }
 
-int is_message(char *buffer, short length)
-{
-	time_t t = time(NULL);
-	struct tm tm = *localtime(&t);
-	if(*(buffer+1) == CMD_REPLY)
-	{
-		printf("%d-%02d-%02d %02d:%02d:%02d Message from module: ", tm.tm_year + 1900, 
-			tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
-		switch(*(buffer+2))
-		{
-			case REPLY_OK:
-				printf("ok\n");
-				break;
-			case ERROR_CODE_UNKNOWN_CMD:
-				printf("unknown command\n");
-				break;
-			case ERROR_CODE_IDLE:
-				printf("idle\n");
-				break;	
-			case ERROR_CODE_FAILED:
-				printf("command failed\n");
-				break;
-			case ERROR_WRONG_PARAM:
-				printf("wrong parameter\n");
-				break;
-			case ERROR_UNEXPECTD_ISR:
-				printf("unexpected ISR from ADC\n");
-				break;	
-			case ERROR_FLASH_KEY:
-				printf("error reading from flash\n");
-				break;		
-			case ERROR_ADC_ID:
-				printf("wrong ADC ID\n");
-				break;
-			default:
-				printf("unrecognized\n");
-				return -1;
-				break;			
-		}
-	}
-	else if(*(buffer+1) == CMD_CHECK_ADC)
-	{
-		printf("%d-%02d-%02d %02d:%02d:%02d ADC check ID ", tm.tm_year + 1900, 
-			tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
-		if(*(buffer+2))
-		{
-			printf("ok\n");
-		}
-		else
-		{
-			printf("failed\n");
-		}
-	}
-	else if(*(buffer+1) == CMD_READ_REGISTER)
-	{
-		printf("%d-%02d-%02d %02d:%02d:%02d Read register ", tm.tm_year + 1900, 
-			tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
-		printf("addr %02x ",*(buffer+2));
-		display_register((buffer+3), *(buffer)-2);
-	}
-	else return -1;
-	return 0;
-}
-
-void print_wvwms_config(struct wvwms_configuration *config)
-{
-	printf("WVWMS configuration:\n");
-	printf("SampleCntAvg: %u\n", (unsigned int)config->sampleCntAvg);
-	printf("SamplePackSize: %u\n", (unsigned int)config->samplePackSize);
-	printf("Measurement mode: %u\n", (unsigned int)config->meas_mode);
-	printf("Cut off value: %u\n", (unsigned int)config->sampleCutOff);
-	printf("Peak margin %u\n", (unsigned int)config->peakMargin);
-	print_adc_config(&(config->ad7195_config));
-}
-
-void print_adc_config(struct ad7190_configuration *config)
-{
-	printf("AD7190 configuration: \n");
-	printf("MODE REGISTER           0x%08x \n", config->mode_register);
-	printf("CONFIGURATION REGISTER  0x%08x \n", config->configuration_register);
-	printf("OFFSET REGISTER         0x%08x \n", config->offset_register);
-	printf("FULL SCALE REGISTER     0x%08x \n", config->full_scale_register);
-	printf("GPOCON REGISTER         0x%08x \n", config->gpocon_register);
-}
-
+/**
+ * Saves configuration registers of WVWMS node
+ * @param buffer
+ * @param length
+ * @return
+ */
 int save_config(char *buffer, unsigned char length)
 {
 	unsigned int i;
 	printf("Saving file: ");
-	FILE *handleWrite = fopen("wvwms_config.bin", "wb");		
+	FILE *handleWrite = fopen(NODE_CONFIGURATION_FILE, "wb");
 	for(i=0;i<length;i++)
 	{
 		printf("%02x|", *(buffer+i)); 
 	}
-	fwrite(buffer, length, sizeof(char), handleWrite);
+	if (length != fwrite(buffer, length, sizeof(char), handleWrite))
+	{
+		printf(" - failed!");
+	}
 	fclose(handleWrite);
 	printf("\n");
-	return 0;
+	return OK;
 }
 
-void display_data(char *buffer, short length)
+/**
+ * Loads program configuration from file
+ * @param router_cfg - pointer to configuration structure
+ * @return OK if succeed
+ */
+int read_config_file(wvwms_router_config_t * router_cfg)
 {
-	int i = 0;
-	printf("Unrecognized incoming packet, length %d: ", length);
-	for(i=0;i<length;i++)
-		printf("%02x|", 0xFF & *(buffer+i));
-	printf("\n");
+	if(ini_parse(CONFIGURATION_FILE, config_handler, router_cfg) < 0)
+	{
+		perror("Failed to load configuration from " CONFIGURATION_FILE "\n");
+		return FAIL;
+	}
+	else
+	{
+		printf("Loaded configuration from " CONFIGURATION_FILE ":\n");
+		display_router_cfg(router_cfg);
+		return OK;
+	}
 }
 
-void display_outgoing_data(char *buffer, short length)
+/**
+ * This is callback function for INI library
+ * @param user
+ * @param section
+ * @param name
+ * @param value
+ * @return
+ */
+static int config_handler(void* user, const char* section, const char* name,
+                   const char* value)
 {
-	int i = 0;
-	printf("Unrecognized outgoing packet, length %d: ", length);
-	for(i=0;i<length;i++)
-		printf("%02x|", 0xFF & *(buffer+i));
-	printf("\n");
+	wvwms_router_config_t* pconfig = (wvwms_router_config_t*)user;
+
+    #define MATCH(s, n) strcmp(section, s) == 0 && strcmp(name, n) == 0
+    if (MATCH("wvwms_config", "zero_level")) {
+        pconfig->zero_level = atoi(value);
+    } else if (MATCH("wvwms_config", "voltage_mul")) {
+        pconfig->voltage_mul = atoi(value);
+    } else if (MATCH("wvwms_config", "voltage_div")) {
+        pconfig->voltage_div = atoi(value);
+    } else if (MATCH("wvwms_config", "weight_mul")) {
+        pconfig->weight_mul = atoi(value);
+    } else if (MATCH("wvwms_config", "weight_div")) {
+        pconfig->weight_div = atoi(value);
+    } else {
+        return 0;  /* unknown section/name, error */
+    }
+    return 1;
 }
 
-
-// Computing the internet checksum (RFC 1071).
-// Note that the internet checksum does not preclude collisions.
-uint16_t
-checksum (uint16_t *addr, int len)
+/**
+ * Calculates
+ * @param sample
+ * @param voltage
+ * @param weight
+ * @param pconfig
+ * @return
+ */
+int calculate(uint32_t sample, float *voltage, float *weight,
+		wvwms_router_config_t* pconfig)
 {
-  int count = len;
-  register uint32_t sum = 0;
-  uint16_t answer = 0;
-
-  // Sum up 2-byte values until none or only one byte left.
-  while (count > 1) {
-    sum += *(addr++);
-    count -= 2;
-  }
-
-  // Add left-over byte, if any.
-  if (count > 0) {
-    sum += *(uint8_t *) addr;
-  }
-
-  // Fold 32-bit sum into 16 bits; we lose information by doing this,
-  // increasing the chances of a collision.
-  // sum = (lower 16 bits) + (upper 16 bits shifted right 16 bits)
-  while (sum >> 16) {
-    sum = (sum & 0xffff) + (sum >> 16);
-  }
-
-  // Checksum is one's compliment of sum.
-  answer = ~sum;
-
-  return (answer);
+	if (pconfig != NULL)
+	{
+		*voltage = pconfig->voltage_mul * sample;
+		*voltage = *voltage/(pconfig->voltage_div);
+		*weight = pconfig->weight_mul * sample;
+		*weight = *weight/(pconfig->weight_div);
+		return OK;
+	}
+	return FAIL;
 }
 
-// Build IPv6 UDP pseudo-header and call checksum function (Section 8.1 of RFC 2460).
-uint16_t
-udp6_checksum (struct ip6_hdr iphdr, struct udphdr udphdr, uint8_t *payload, 
-		int payloadlen)
-{
-  char buf[IP_MAXPACKET];
-  char *ptr;
-  int chksumlen = 0;
-  int i;
 
-  ptr = &buf[0];  // ptr points to beginning of buffer buf
 
-  // Copy source IP address into buf (128 bits)
-  memcpy (ptr, &iphdr.ip6_src.s6_addr, sizeof (iphdr.ip6_src.s6_addr));
-  ptr += sizeof (iphdr.ip6_src.s6_addr);
-  chksumlen += sizeof (iphdr.ip6_src.s6_addr);
 
-  // Copy destination IP address into buf (128 bits)
-  memcpy (ptr, &iphdr.ip6_dst.s6_addr, sizeof (iphdr.ip6_dst.s6_addr));
-  ptr += sizeof (iphdr.ip6_dst.s6_addr);
-  chksumlen += sizeof (iphdr.ip6_dst.s6_addr);
 
-  // Copy UDP length into buf (32 bits)
-  memcpy (ptr, &udphdr.len, sizeof (udphdr.len));
-  ptr += sizeof (udphdr.len);
-  chksumlen += sizeof (udphdr.len);
 
-  // Copy zero field to buf (24 bits)
-  *ptr = 0; ptr++;
-  *ptr = 0; ptr++;
-  *ptr = 0; ptr++;
-  chksumlen += 3;
 
-  // Copy next header field to buf (8 bits)
-  memcpy (ptr, &iphdr.ip6_nxt, sizeof (iphdr.ip6_nxt));
-  ptr += sizeof (iphdr.ip6_nxt);
-  chksumlen += sizeof (iphdr.ip6_nxt);
-
-  // Copy UDP source port to buf (16 bits)
-  memcpy (ptr, &udphdr.source, sizeof (udphdr.source));
-  ptr += sizeof (udphdr.source);
-  chksumlen += sizeof (udphdr.source);
-
-  // Copy UDP destination port to buf (16 bits)
-  memcpy (ptr, &udphdr.dest, sizeof (udphdr.dest));
-  ptr += sizeof (udphdr.dest);
-  chksumlen += sizeof (udphdr.dest);
-
-  // Copy UDP length again to buf (16 bits)
-  memcpy (ptr, &udphdr.len, sizeof (udphdr.len));
-  ptr += sizeof (udphdr.len);
-  chksumlen += sizeof (udphdr.len);
-
-  // Copy UDP checksum to buf (16 bits)
-  // Zero, since we don't know it yet
-  *ptr = 0; ptr++;
-  *ptr = 0; ptr++;
-  chksumlen += 2;
-
-  // Copy payload to buf
-  memcpy (ptr, payload, payloadlen * sizeof (uint8_t));
-  ptr += payloadlen;
-  chksumlen += payloadlen;
-
-  // Pad to the next 16-bit boundary
-  for (i=0; i<payloadlen%2; i++, ptr++) {
-    *ptr = 0;
-    ptr++;
-    chksumlen++;
-  }
-
-  return checksum ((uint16_t *) buf, chksumlen);
-}
-
-// Allocate memory for an array of chars.
-char *
-allocate_strmem (int len)
-{
-  void *tmp;
-
-  if (len <= 0) {
-    fprintf (stderr, 
-	"ERROR: Cannot allocate memory because len = %i in allocate_strmem().\n", len);
-    exit (EXIT_FAILURE);
-  }
-
-  tmp = (char *) malloc (len * sizeof (char));
-  if (tmp != NULL) {
-    memset (tmp, 0, len * sizeof (char));
-    return (tmp);
-  } else {
-    fprintf (stderr, "ERROR: Cannot allocate memory for array allocate_strmem().\n");
-    exit (EXIT_FAILURE);
-  }
-}
-
-// Allocate memory for an array of unsigned chars.
-uint8_t *
-allocate_ustrmem (int len)
-{
-  void *tmp;
-
-  if (len <= 0) {
-    fprintf (stderr, 
-	"ERROR: Cannot allocate memory because len = %i in allocate_ustrmem().\n", len);
-    exit (EXIT_FAILURE);
-  }
-
-  tmp = (uint8_t *) malloc (len * sizeof (uint8_t));
-  if (tmp != NULL) {
-    memset (tmp, 0, len * sizeof (uint8_t));
-    return (tmp);
-  } else {
-    fprintf (stderr, "ERROR: Cannot allocate memory for array allocate_ustrmem().\n");
-    exit (EXIT_FAILURE);
-  }
-}

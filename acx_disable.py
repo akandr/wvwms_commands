@@ -9,7 +9,7 @@ import sys
 def main():
     s = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
     s.bind(('', MYPORT))
-    data = bytearray([0x7A, 0xA7, 0x7, 0x11, 0x2, 0x3, 0x17, 0x01, 0x80])
+    data = bytearray([0x7A, 0xA7, 0x2, 0x24, 0x0])
     s.sendto(data, (MYGROUP_6, MYPORT))
 
 if __name__ == '__main__':

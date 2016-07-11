@@ -6,6 +6,7 @@
  */
 
 #include "udp_network.h"
+#include "wvwms_types.h"
 
 static int sock;
 
@@ -31,10 +32,15 @@ uint16_t
 udp6_checksum (struct ip6_hdr iphdr, struct udphdr udphdr, uint8_t *payload,
 		int payloadlen)
 {
+
   char buf[IP_MAXPACKET];
   char *ptr;
   int chksumlen = 0;
   int i;
+  if(payloadlen>100){
+	  printf("payloadlen too big: %u\n\r", payloadlen);
+	  return 0;
+  }
 
   ptr = &buf[0];  // ptr points to beginning of buffer buf
 
@@ -181,26 +187,26 @@ int init_sender(void)
 {
 	int status, sinlen;
 	int yes = 1;
-	struct sockaddr_in sock_in;
+	static struct sockaddr_in sock_in;
 
 	sinlen = sizeof(struct sockaddr_in);
 	memset(&sock_in, 0, sinlen);
 
 	sock = socket (PF_INET, SOCK_DGRAM, IPPROTO_UDP);
 	sock_in.sin_addr.s_addr = htonl(INADDR_ANY);
-	sock_in.sin_port = htons(0);
+	sock_in.sin_port = htons(UDP_SENDER_PORT);
 	sock_in.sin_family = PF_INET;
 
 	status = bind(sock, (struct sockaddr *)&sock_in, sinlen);
-	if(!status)
+	if(status)
 	{
-		fprintf(stderr,"Bind failed\n");
+		perror("Bind failed %i\n: ");
 		return EXIT_FAILURE;
 	}
 	status = setsockopt(sock, SOL_SOCKET, SO_BROADCAST, &yes, sizeof(int) );
-	if(!status)
+	if(status)
 	{
-		fprintf(stderr,"Setsockopt failed\n");
+		perror("Setsockopt failed: \n");
 		return EXIT_FAILURE;
 	}
 	return EXIT_SUCCESS;
@@ -209,7 +215,7 @@ int init_sender(void)
 int udp_send(void *buf, size_t buflen)
 {
 	int status, sinlen;
-	struct sockaddr_in sock_in;
+	static struct sockaddr_in sock_in;
 
 	/* -1 = 255.255.255.255 this is a BROADCAST address,
 	 a local broadcast address could also be used.
@@ -223,7 +229,7 @@ int udp_send(void *buf, size_t buflen)
 	status = sendto(sock, buf, buflen, 0, (struct sockaddr *)&sock_in, sinlen);
 	if(!status)
 	{
-		fprintf (stderr,"Sendto failed\n");
+		perror("Sendto failed :\n");
 		return EXIT_FAILURE;
 	}
 	return EXIT_SUCCESS;
@@ -234,7 +240,7 @@ int send_measurement_frame(upload_frame_t * frame)
 	return udp_send(frame, sizeof(upload_frame_t));
 }
 
-int send_weight(uint32_t weight, uint32_t voltage)
+int send_weight(uint32_t weight, uint32_t voltage, uint32_t raw)
 {
 	upload_frame_t frame;
 	struct timespec time;
@@ -243,6 +249,7 @@ int send_weight(uint32_t weight, uint32_t voltage)
 	frame.node_id = 0;
 	frame.status = 0;
 	frame.time = time;
+	frame.raw = raw;
 	frame.weight = weight;
 	frame.voltage = voltage;
 	frame.battery_voltage = 300;

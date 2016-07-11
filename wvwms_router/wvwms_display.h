@@ -13,12 +13,13 @@
 typedef int (*fDispPtr)(char *, short);
 
 void display_register(char *reg, size_t size);
+void display_register_reversed(char *reg, size_t size);
 int display_outgoing_command(char *buffer, size_t length);
 int display_incoming_messages(char *buffer, short length);
 void display_wvwms_config(struct wvwms_configuration *config);
 void display_adc_config(struct ad7190_configuration *config);
-void display_raw_data(char *buffer, short length);
-void display_outgoing_data(char *buffer, short length);
+void display_incomming_raw_data(char *buffer, short length);
+void display_outgoing_raw_data(char *buffer, short length);
 void display_time(void);
 void display_router_cfg(wvwms_router_config_t * cfg);
 void display_values(uint32_t sample, float voltage, float weight);

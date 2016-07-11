@@ -20,6 +20,7 @@ int handle_cmd_measurement_peak_simple(uint8_t *buffer, short length);
 int handle_cmd_measurement_cutoff_pack(uint8_t *buffer, short length);
 int handle_cmd_measurement_buffer(uint8_t *buffer, short length);
 int log_buffer_to_file(uint8_t *buffer, short length);
+int handle_cmd_measurement_truck(uint8_t *buffer, short length);
 
 void display_register(char *reg, size_t size)
 {
@@ -30,15 +31,28 @@ void display_register(char *reg, size_t size)
 	printf("\n");
 }
 
+void display_register_reversed(char *reg, size_t size)
+{
+	int i;
+	printf("0x");
+	for(i = 0; i<size; i++)
+		printf("%02x", *(reg+size-1-i));
+	printf("\n");
+}
+
 int display_outgoing_command(char *buffer, size_t length)
 {
 	int cutoff;
-		switch(*(buffer+3))
+	uint8_t command = *(buffer+3);
+	uint8_t arg1 = *(buffer+4);
+	uint8_t arg2 = *(buffer+5);
+
+		switch(command)
 		{
 			case CMD_MEASUREMENT:
 				display_time();
 				printf("measurement ");
-				if(*(buffer+4))
+				if(arg1)
 					printf("start\n");
 				else
 					printf("stop\n");
@@ -46,7 +60,7 @@ int display_outgoing_command(char *buffer, size_t length)
 			case CMD_VAA_POWER:
 				display_time();
 				printf("vaa power ");
-				if(*(buffer+4))
+				if(arg1)
 					printf("on\n");
 				else
 					printf("off\n");
@@ -54,7 +68,7 @@ int display_outgoing_command(char *buffer, size_t length)
 			case CMD_VDD_POWER:
 				display_time();
 				printf("vdd power ");
-				if(*(buffer+4))
+				if(arg1)
 					printf("on\n");
 				else
 					printf("off\n");
@@ -62,7 +76,7 @@ int display_outgoing_command(char *buffer, size_t length)
 			case CMD_ADC_POWER:
 				display_time();
 				printf("adc power (don't trust it) ");
-				if(*(buffer+4))
+				if(arg1)
 					printf("on\n");
 				else
 					printf("off\n");
@@ -70,7 +84,7 @@ int display_outgoing_command(char *buffer, size_t length)
 			case CMD_SET_ACX:
 				display_time();
 				printf("adc acx ");
-				if(*(buffer+4))
+				if(arg1)
 					printf("on\n");
 				else
 					printf("off\n");
@@ -78,7 +92,7 @@ int display_outgoing_command(char *buffer, size_t length)
 			case CMD_SET_CHOP:
 				display_time();
 				printf("adc chop ");
-				if(*(buffer+4))
+				if(arg1)
 					printf("on\n");
 				else
 					printf("off\n");
@@ -86,13 +100,13 @@ int display_outgoing_command(char *buffer, size_t length)
 			case CMD_READ_REGISTER:
 				display_time();
 				printf("read register with length %u, addr 0x%02x\n",
-						*(buffer+5), *(buffer+4));
+						arg2, arg1);
 			break;
 			case CMD_WRITE_REGISTER:
 				display_time();
 				printf("write register with length %u, addr 0x%02x ",
-						*(buffer+5), *(buffer+4));
-				display_register(buffer+6, *(buffer+5));
+						arg2, arg1);
+				display_register_reversed(buffer+6, arg2);
 			break;
 			case CMD_CONSOLE_PRINT:
 				display_time();
@@ -101,7 +115,7 @@ int display_outgoing_command(char *buffer, size_t length)
 			case CMD_CALIBRATE:
 				display_time();
 				printf("calibrate mode ");
-				switch (*(buffer+4))
+				switch (arg1)
 				{
 					case INTERNAL_ZERO_SCALE:
 						printf("internal zero scale");
@@ -120,41 +134,20 @@ int display_outgoing_command(char *buffer, size_t length)
 					break;
 				}
 				printf(" channel ");
-				switch (*(buffer+5))
+				if(arg2>7)
 				{
-					case 0:
-						printf("0");
-					break;
-					case 1:
-						printf("1");
-					break;
-					case 2:
-						printf("2");
-					break;
-					case 3:
-						printf("3");
-					break;
-					case 4:
-						printf("4");
-					break;
-					case 5:
-						printf("5");
-					break;
-					case 6:
-						printf("6");
-					break;
-					case 7:
-						printf("7");
-					break;
-					default:
-						printf("uknown %u", *(buffer+5));
-					break;
+					printf("uknown: %u", arg2);
+				}
+				else
+				{
+					printf("%u", arg2);
 				}
 				printf("\n");
+
 			break;
 			case CMD_SELECT_CHANNEL:
 				display_time();
-				printf("select channel %u\n", (unsigned short) *(buffer+4));
+				printf("select channel %u\n", (unsigned short) arg1);
 			break;
 			case CMD_SET_CUTOFF:
 				display_time();
@@ -174,10 +167,10 @@ int display_outgoing_command(char *buffer, size_t length)
 			case CMD_RANGE_SETUP:
 				display_time();
 				printf("set polarity to ");
-				if(*(buffer+4)) printf("unipolar ");
+				if(arg1) printf("unipolar ");
 				else printf("bipolar ");
 				printf(" and range to ");
-				switch (*(buffer+5))
+				switch (arg2)
 				{
 					case G_5V:
 						printf("+-5V\n");
@@ -205,10 +198,10 @@ int display_outgoing_command(char *buffer, size_t length)
 			case CMD_ADC_POWER_MODE:
 				display_time();
 				printf("adc power mode ");
-				if(*(buffer+4)==IDLE_MODE){
+				if(arg1==IDLE_MODE){
 					printf("idle\n");
 				}
-				else if(*(buffer+4)==POWER_DOWN_MODE){
+				else if(arg1==POWER_DOWN_MODE){
 					printf("power down\n");
 				}
 				else{
@@ -218,7 +211,7 @@ int display_outgoing_command(char *buffer, size_t length)
 			case CMD_MODE:
 				display_time();
 				printf("set mode ");
-				switch (*(buffer+4))
+				switch (arg1)
 				{
 					case NORMAL:
 						printf("normal\n");
@@ -249,6 +242,9 @@ int display_outgoing_command(char *buffer, size_t length)
 					break;
 					case BUFFER:
 						printf("buffer measurement\n");
+					break;
+					case CUTOFF_BUFFER:
+						printf("cutoff buffer measurement\n");
 					break;
 					default:
 						printf("unknown\n");
@@ -302,8 +298,8 @@ int display_outgoing_command(char *buffer, size_t length)
 			case CMD_WRITE_CONFIG:
 				display_time();
 				printf("upload config:\n");
-				display_wvwms_config((struct wvwms_configuration *)
-						((char *)buffer+4));
+				display_wvwms_config(
+						(struct wvwms_configuration *) ((char *)buffer+4));
 				break;
 			default:
 				return -1;
@@ -312,7 +308,7 @@ int display_outgoing_command(char *buffer, size_t length)
 	return 0;
 }
 
-void display_raw_data(char *buffer, short length)
+void display_incomming_raw_data(char *buffer, short length)
 {
 	int i = 0;
 	printf("Unrecognized incoming packet, length %d: ", length);
@@ -321,7 +317,7 @@ void display_raw_data(char *buffer, short length)
 	printf("\n");
 }
 
-void display_outgoing_data(char *buffer, short length)
+void display_outgoing_raw_data(char *buffer, short length)
 {
 	int i = 0;
 	printf("Unrecognized outgoing packet, length %d: ", length);
@@ -332,13 +328,10 @@ void display_outgoing_data(char *buffer, short length)
 
 int display_incoming_messages(char *buffer, short length)
 {
-	time_t t = time(NULL);
-	struct tm tm = *localtime(&t);
 	if(*(buffer+1) == CMD_REPLY)
 	{
-		printf("%d-%02d-%02d %02d:%02d:%02d Message from module: ",
-				tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour,
-				tm.tm_min, tm.tm_sec);
+		display_time();
+		printf("Message from module: ");
 		switch(*(buffer+2))
 		{
 			case REPLY_OK:
@@ -376,8 +369,8 @@ int display_incoming_messages(char *buffer, short length)
 	}
 	else if(*(buffer+1) == CMD_CHECK_ADC)
 	{
-		printf("%d-%02d-%02d %02d:%02d:%02d ADC check ID ", tm.tm_year + 1900,
-			tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+		display_time();
+		printf("ADC check ID ");
 		if(*(buffer+2))
 		{
 			printf("ok\n");
@@ -389,8 +382,8 @@ int display_incoming_messages(char *buffer, short length)
 	}
 	else if(*(buffer+1) == CMD_READ_REGISTER)
 	{
-		printf("%d-%02d-%02d %02d:%02d:%02d Read register ", tm.tm_year + 1900,
-			tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+		display_time();
+		printf("Read register ");
 		printf("addr %02x ",*(buffer+2));
 		display_register((buffer+3), *(buffer)-2);
 	}
@@ -407,6 +400,7 @@ void display_wvwms_config(struct wvwms_configuration *config)
 	printf("Cut off value: %u\n", (unsigned int)config->sampleCutOff);
 	printf("Peak margin %u\n", (unsigned int)config->peakMargin);
 	printf("Peak samples %u\n\r", (unsigned int)config->peakSamples);
+	printf("Sample buffer size %u\n\r", config->samplesBufferSize);
 	display_adc_config(&(config->ad7195_config));
 }
 
@@ -422,14 +416,13 @@ void display_adc_config(struct ad7190_configuration *config)
 
 int unknown_function(uint8_t *buffer, short length)
 {
-	printf("Unrecognized data type to be displayed!\n");
-	return 0;
+	return FAIL;
 }
 
 void register_data_display_functions(fDispPtr* fArr)
 {
-	uint8_t i;
-	for(i=0; i < 255; i++)
+	uint16_t i;
+	for(i=0; i <= 255; i++)
 	{
 		fArr[i] = (fDispPtr)&unknown_function;
 	}
@@ -440,7 +433,9 @@ void register_data_display_functions(fDispPtr* fArr)
 	fArr[CMD_MEAS_CUTOFF_PACK] = (fDispPtr)&handle_cmd_measurement_cutoff_pack;
 	fArr[CMD_MEAS_PEAK] = (fDispPtr)&handle_cmd_measurement_peak;
 	fArr[CMD_MEAS_PEAK_SIMPLE] = (fDispPtr)&handle_cmd_measurement_peak_simple;
-	fArr[CMD_MEASURE_BUFFER] = (fDispPtr)&handle_cmd_measurement;
+	fArr[CMD_MEASURE_BUFFER] = (fDispPtr)&handle_cmd_measurement_buffer;
+	fArr[CMD_MEAS_TRUCK] = (fDispPtr)&handle_cmd_measurement_truck;
+	printf("Incoming packet handler functions have been registered\n");
 }
 
 int handle_cmd_measurement(uint8_t *buffer, short length)
@@ -515,6 +510,20 @@ int handle_cmd_measurement_cutoff_pack(uint8_t *buffer, short length)
 	else return FAIL;
 }
 
+int handle_cmd_measurement_truck(uint8_t *buffer, short length)
+{
+	unsigned int data;
+	uint8_t wheels;
+
+	if(length != 6) return FAIL;
+	display_time();
+	wheels = *(buffer+2);
+	data = (*(buffer+6)<<24) | (*(buffer+5)<<16) | (*(buffer+4)<<8) | *(buffer+3);
+	printf("CMD_MEAS_TRUCK WHEELS: %u WEIGHT: %16u\n", wheels, data);
+	return OK;
+}
+
+
 int handle_cmd_measurement_peak(uint8_t *buffer, short length)
 {
 	unsigned int data;
@@ -536,6 +545,7 @@ int handle_cmd_measurement_peak_simple(uint8_t *buffer, short length)
 	return OK;
 }
 
+
 int handle_cmd_measurement_buffer(uint8_t *buffer, short length)
 {
 	uint8_t i;
@@ -547,11 +557,11 @@ int handle_cmd_measurement_buffer(uint8_t *buffer, short length)
 		i = 0;
 		sampleId = (*(buffer+5)<<24) | (*(buffer+4)<<16) | (*(buffer+3)<<8)
 						| (*(buffer+2));
-		while(length>i+2){
+		while(length>i+5){
 			display_time();
 			data = (*(buffer+8+i)<<16) | (*(buffer+7+i)<<8) | (*(buffer+6+i));
-			printf("BUFFER %u %16u\n", sampleId++, data);
-			i+=8;
+			printf("BUFFER %u %16u\n", sampleId+i/4, data);
+			i+=4;
 		}
 		return log_buffer_to_file(buffer, length);
 	}
@@ -580,16 +590,16 @@ int log_buffer_to_file(uint8_t *buffer, short length)
 		i = 0;
 		sampleId = (*(buffer+5)<<24) | (*(buffer+4)<<16) | (*(buffer+3)<<8)
 						| (*(buffer+2));
-		while(length>i+2){
+		while(length>i+5){
 			clock_gettime(CLOCK_REALTIME, &spec);
 			t = spec.tv_sec;
 			struct tm tm = *localtime(&t);
-			fprintf(fp, "%d-%02d-%02d %02d:%02d:%02d:%03d", tm.tm_year + 1900,
+			fprintf(fp, "%d-%02d-%02d %02d:%02d:%02d:%03d ", tm.tm_year + 1900,
 					tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec,
 					(int)lround(spec.tv_nsec / 1.0e6));
 			data = (*(buffer+8+i)<<16) | (*(buffer+7+i)<<8) | (*(buffer+6+i));
-			fprintf(fp, "%u %16u\n", sampleId++, data);
-			i+=8;
+			fprintf(fp, "%u %16u\n", sampleId+i/4, data);
+			i+=4;
 		}
 		fclose(fp);
 		return OK;
@@ -603,77 +613,11 @@ int log_buffer_to_file(uint8_t *buffer, short length)
 
 int process_mesaurement_data(char *buffer, short length, fDispPtr* fArr)
 {
-	return fArr[(uint8_t)*buffer](buffer, length);
+	int rval = FAIL;
+	//printf("Calling function %u with length %u\n", *((uint8_t *)buffer+1), length);
+	rval = fArr[*((uint8_t *)buffer+1)](buffer, length);
+	return rval;
 }
-
-//	unsigned int data;
-//	unsigned int sampleId;
-//	int i = 0;
-//
-//	if(*(buffer+1) == CMD_MEASUREMENT && length == 5) {
-//		display_time();
-//		data = (*(buffer+4)<<16) | (*(buffer+3)<<8) | (*(buffer+2));
-//		printf("CMD_MEASUREMENT: %16u\n", data);
-//		return 0;
-//	}
-//	else if(*(buffer+1) == CMD_MEAS_FAST && length == 5) {
-//		display_time();
-//		data = (*(buffer+4)<<16) | (*(buffer+3)<<8) | (*(buffer+2));
-//		printf("CMD_MEAS_FAST: %16u\n", data);
-//		return 0;
-//	}
-//	else if(*(buffer+1) == CMD_MEAS_SAMPLE_PACK  && length >5) {
-//		i = 0;
-//		while(length>i+2){
-//			display_time();
-//			data = (*(buffer+4+i)<<16) | (*(buffer+3+i)<<8) | (*(buffer+2+i));
-//			printf("CMD_MEAS_SAMPLE_PACK(%u): %16u\n", i/4, data);
-//			i+=4;
-//		}
-//		return 0;
-//	}
-//	else if(*(buffer+1) == CMD_MEAS_CUTOFF && length == 5) {
-//		display_time();
-//		data = (*(buffer+4)<<16) | (*(buffer+3)<<8) | (*(buffer+2));
-//		printf("CMD_MEAS_CUTOFF: %16u\n", data);
-//		return 0;
-//	}
-//	else if(*(buffer+1) == CMD_MEAS_CUTOFF_PACK  && length >5) {
-//		i = 0;
-//		while(length>i+2){
-//			display_time();
-//			data = (*(buffer+4+i)<<16) | (*(buffer+3+i)<<8) | (*(buffer+2+i));
-//			printf("CMD_MEAS_CUTOFF_PACK(%u): %16u\n", i/4, data);
-//			i+=4;
-//		}
-//		return 0;
-//	}
-//	else if(*(buffer+1) == CMD_MEAS_PEAK && length == 5) {
-//		display_time();
-//		data = (*(buffer+4)<<16) | (*(buffer+3)<<8) | (*(buffer+2));
-//		printf("CMD_MEAS_PEAK: %16u\n", data);
-//		return 0;
-//	}
-//	else if(*(buffer+1) == CMD_MEAS_PEAK_SIMPLE && length == 5) {
-//		display_time();
-//		data = (*(buffer+4)<<16) | (*(buffer+3)<<8) | (*(buffer+2));
-//		printf("CMD_MEAS_PEAK_SIMPLE: %16u\n", data);
-//		return 0;
-//	}
-//	else if(*(buffer+1) == CMD_MEASURE_BUFFER  && length >5) {
-//		i = 0;
-//		sampleId = (*(buffer+5)<<24) | (*(buffer+4)<<16) | (*(buffer+3)<<8)
-//						| (*(buffer+2));
-//		while(length>i+2){
-//			display_time();
-//			data = (*(buffer+8+i)<<16) | (*(buffer+7+i)<<8) | (*(buffer+6+i));
-//			printf("BUFFER %u %16u\n", sampleId++, data);
-//			i+=8;
-//		}
-//		return 0;
-//	}
-//	else return -1;
-
 
 void display_values(uint32_t sample, float voltage, float weight)
 {
@@ -688,7 +632,7 @@ void display_time(void)
     clock_gettime(CLOCK_REALTIME, &spec);
 	t = spec.tv_sec;
 	struct tm tm = *localtime(&t);
-	printf("%d-%02d-%02d %02d:%02d:%02d:%03d", tm.tm_year + 1900,
+	printf("%d-%02d-%02d %02d:%02d:%02d:%03d ", tm.tm_year + 1900,
 			tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec,
 			(int)lround(spec.tv_nsec / 1.0e6));
 }

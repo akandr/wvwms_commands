@@ -44,21 +44,29 @@ int ss;
 
 int main (int argc, char **argv)
 {
+  ssize_t rval;
   int sd;
   char buffer[MAXBUF];
   wvwms_router_config_t router_cfg;
-
+  fDispPtr fArr[256];
 
   // Submit request for a raw socket descriptor.
   printf("Wireless Vehicle Weight Measurement System v2\n");
   printf("WVWMS Packet Router v2\n");
   printf("Compiled: %s  %s\n", __DATE__, __TIME__);
 
-  if ((sd = socket (PF_PACKET, SOCK_RAW, htons (ETH_P_ALL))) < 0)
+  sd = socket (PF_PACKET, SOCK_RAW, htons (ETH_P_ALL));
+
+  if (sd  < 0)
   {
-    perror("Creating receiver socket() failed");
+    perror("Creating receiver socket() failed\n");
     return FAIL;
   }
+  else
+  {
+	  printf("Creating receiver socket() ok\n");
+  }
+
   if (read_config_file(&router_cfg))
   {
 	perror("No configuration, exiting\n");
@@ -70,19 +78,26 @@ int main (int argc, char **argv)
 	perror("Failed to create sender socket, exiting\n");
 	return FAIL;
   }
+  else
+  {
+	  printf("Sender socket initialized successfully\n");
+  }
 
-  fDispPtr fArr[255]={NULL};
   register_data_display_functions(fArr);
-  fArr[250](NULL, NULL);
 
   while(1)
   {
-	  if (recvfrom(sd, buffer, MAXBUF, 0, NULL, NULL) > 0)
+	  rval = recvfrom(sd, buffer, MAXBUF, 0, NULL, NULL);
+	  if (rval > 0)
 	  {
 		process_packet(buffer, fArr);
   	  }
+	  if(rval < 0)
+	  {
+		perror("recvfrom() returned error\n");
+	  }
   }
-
+  perror("Exiting program for unknown reason\n");
   close (sd);
   return (EXIT_SUCCESS);
 }
@@ -116,7 +131,7 @@ void process_outgoing_data(char *buffer, struct ip6_hdr *iphdr, struct udphdr *u
 			ETH_HDRLEN + sizeof (struct ip6_hdr) + sizeof(struct udphdr);
 	if(!display_outgoing_command(buffer+offset, *(buffer+offset))) return;
 	if(!is_config_upload(buffer+offset, (short) *(buffer+offset))) return;
-	display_outgoing_data(buffer+offset, length);
+	display_outgoing_raw_data(buffer+offset, length);
 }
 
 int is_config_upload(char *buffer, short length)
@@ -140,7 +155,7 @@ void process_incoming_data(char *buffer, struct ip6_hdr *iphdr, struct udphdr *u
 	if(!process_mesaurement_data(buffer+offset, (short) *(buffer+offset), fArr)) return;
 	if(!is_config_download(buffer+offset, (short) *(buffer+offset))) return;
 	if(!display_incoming_messages(buffer+offset, (short) *(buffer+offset)))  return;
-	display_raw_data(buffer+offset, length);
+	display_incomming_raw_data(buffer+offset, length);
 }
 
 int is_config_download(char *buffer, short length)
@@ -166,16 +181,26 @@ int is_config_download(char *buffer, short length)
 int save_config(char *buffer, unsigned char length)
 {
 	unsigned int i;
-	printf("Saving file: ");
+	int rval;
+
+	printf("Received binary: ");
 	FILE *handleWrite = fopen(NODE_CONFIGURATION_FILE, "wb");
 	for(i=0;i<length;i++)
 	{
 		printf("%02x|", *(buffer+i)); 
 	}
-	if (length != fwrite(buffer, length, sizeof(char), handleWrite))
+	printf("\nSaving file ");
+	rval = fwrite(buffer, sizeof(char), length, handleWrite);
+	if (length != rval)
 	{
-		printf(" - failed!");
+		printf("failed! fwrite returned %i, expected %i \n", rval, length);
+		perror("Error: ");
 	}
+	else
+	{
+		printf("ok!\n");
+	}
+
 	fclose(handleWrite);
 	printf("\n");
 	return OK;

@@ -38,7 +38,7 @@
 
 enum WvwmsState {IDLE, MEASUREMENT};
 enum MeasurementMode {NORMAL, FAST, SAMPLE_PACK, CUTOFF, CUTOFF_PACK,
-					 PEAK, PEAK_SIMPLE, TRUCK, TRUCK_SIMPLE, BUFFER};
+					 PEAK, PEAK_SIMPLE, TRUCK, TRUCK_SIMPLE, BUFFER, CUTOFF_BUFFER};
 
 struct ad7190_configuration{
 	unsigned int mode_register; //= DEFAULT_MODE_REGISTER;
@@ -57,6 +57,7 @@ struct wvwms_configuration{
 	uint32_t sampleCutOff;
 	uint32_t peakMargin;
 	uint32_t peakSamples;
+	uint32_t samplesBufferSize;
 };
 
 typedef struct wvwms_router_config{
@@ -67,14 +68,15 @@ typedef struct wvwms_router_config{
 	uint32_t weight_div;
 } wvwms_router_config_t;
 
-typedef struct{
+typedef struct  __attribute__((packed)){
 	uint32_t node_id;
 	struct timespec time;
+	uint32_t raw;
 	uint32_t weight;
 	uint32_t voltage;
 	uint32_t status;
 	uint32_t battery_voltage;
-} upload_frame_t;
+} upload_frame_t ;
 
 
 #endif /* WVWMS_TYPES_H_ */

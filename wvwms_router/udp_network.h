@@ -24,6 +24,7 @@ udp6_checksum (struct ip6_hdr iphdr, struct udphdr udphdr, uint8_t *payload,
 char * allocate_strmem (int len);
 uint8_t * allocate_ustrmem (int len);
 int verify_crc(char *buffer);
-int send_weight(uint32_t weight, uint32_t voltage);
+int send_weight(uint32_t weight, uint32_t voltage, uint32_t raw);
+int init_sender(void);
 
 #endif /* UDP_NETWORK_H_ */
